@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="author" content="FEI YUAN">
+  <meta name="email" content="fei.yuan@bcm.edu">
+
+  <title>Enrichment Profile Visualizer</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" />
+  <link rel="stylesheet" href="https://unpkg.com/tabulator-tables@6.3.1/dist/css/tabulator.min.css">
+  <link href="./css/style.css" rel="stylesheet">
+</head>
+
+<body class="container-fluid bg-light">
+  <div class="row py-2 align-items-center g-2 flex-shrink-0">
+    <div
+      class="col-sm-2 col-md-1 d-flex align-items-center justify-content-start">
+      <h1 class="h3 mb-0">EPV</h1>
+      <button type="button" class="btn btn-light py-0 ms-1" title="Help"
+              data-bs-toggle="modal" data-bs-target="#helpModal">
+        <i class="bi bi-question-circle"></i>
+      </button>
+    </div>
+
+    <div class="col-9 col-sm-10 col-md-4 col-lg-5 d-flex justify-content-end d-none" id="switchers">
+      <button type="button" class="btn btn-light position-relative py-0 px-1 disabled" id="btnHitsModal"
+              data-bs-toggle="modal" data-bs-target="#hitsModal" title="Candidate Hits">
+        <i class="bi bi-bag"></i>
+        <span class="position-absolute top-0 start-100 translate-middle">
+          <span class="badge rounded-pill bg-danger text-small" id="numHits"></span>
+        </span>
+      </button>
+
+      <button type="button" class="btn btn-light position-relative py-0 px-1 ms-4" id="btnTopHitsModal"
+              data-bs-toggle="modal" data-bs-target="#topHitsModal" title="Candidate Hits">
+        <i class="bi bi-table"></i>
+        <span class="position-absolute top-0 start-100 translate-middle">
+          <span class="badge rounded-pill bg-primary text-small" id="numTopHits"></span>
+        </span>
+      </button>
+
+      <button type="button" class="btn btn-light py-0 ms-4" title="Upload a file to visualize"
+              data-bs-toggle="modal" data-bs-target="#uploadModal">
+        <i class="bi bi-upload"></i>
+      </button>
+
+      <div class="btn btn-light py-0 ms-2" title="Save current session" id="btnSaveSession"
+              data-action="saveSession">
+        <i class="bi bi-download"></i>
+      </div>
+
+      <button type="button" class="btn btn-light py-0 ms-1 me-2" title="Config"
+              data-bs-toggle="modal" data-bs-target="#configModal">
+        <i class="bi bi-gear"></i>
+      </button>
+    </div>
+
+    <div class="col-12 col-sm-12 col-md-7 col-lg-6 d-flex justify-content-end d-none" id="selectors">
+      <div id="data-selector" class="btn-group d-flex w-100" role="group" aria-label="X / Library / Y">
+        <div class="btn-group flex-fill" role="group">
+          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100 text-start rounded-start-pill"
+                  data-bs-toggle="dropdown" aria-expanded="false" id="btnX">X</button>
+          <ul class="dropdown-menu" id="xSel">
+          </ul>
+        </div>
+
+        <div class="btn-group flex-fill" role="group">
+          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100"
+                  data-bs-toggle="dropdown" aria-expanded="false" id="btnLibrary">Library</button>
+          <ul class="dropdown-menu" id="librarySel">
+          </ul>
+        </div>
+
+        <div class="btn-group flex-fill" role="group">
+          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100 text-end rounded-end-pill"
+                  data-bs-toggle="dropdown" aria-expanded="false" id="btnY">Y</button>
+          <ul class="dropdown-menu" id="ySel">
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container bg-white align-items-center align-content-center" id="uploadPanel">
+    <div class="upload-card py-3 rounded">
+      <h2 class="h5 text-center mb-2">Load enrichment profile or session data</h2>
+      <p class="text-center text-secondary mb-4">
+        from a <strong>.csv/.tsv/.csv.gz/.tsv.gz</strong> file with a header row
+        <br> or <br>
+        from a <strong>.json/.json.gz</strong> file to visualize the enrichment profile
+      </p>
+
+      <form id="dropzone" class="dropzone dz-theme p-5 text-center rounded border border-dark border-3 border-dotted bg-neutral"
+            aria-label="Upload a file by click or drag-and-drop" action="#">
+        <div class="dz-message align-middle">
+          <div class="dz-title fw-semibold fs-5">Drag &amp; Drop File</div>
+          <div class="dz-sub text-secondary">… or click here to choose one from your computer</div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="chartPanel" class="d-none"></div>
+
+  <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="helpModalLabel">Enrichment Profile Visualizer Usage</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="helpModalBody" style="height:75vh; overflow:auto;">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="hitsModal" tabindex="-1" aria-labelledby="hitModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="bagModalLabel">Candidate Hits</h5>
+          <div class="ms-auto d-flex align-items-center">
+            <button type="button" class="btn bg-white me-2" data-action="downloadHits">
+              <i class="bi bi-download text-primary"></i>
+            </button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div id="hitsTable" class="w-100 h-100 p-1 bg-white"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="topHitsModal" tabindex="-1" aria-labelledby="topHitsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="topHitsModalLabel">Top Hits</h5>
+          <div class="ms-auto d-flex align-items-center">
+            <button type="button" class="btn bg-white me-2" data-action="downloadTopHits">
+              <i class="bi bi-download text-primary"></i>
+            </button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div id="topHitsTable" class="w-100 h-100 p-1 bg-white"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="configModal" tabindex="-1" aria-labelledby="configModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="configModalLabel">Visualizer Config</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form action="" class="row g-3">
+            <div class="col-6 col-md-4">
+              <label for="fontSize" class="form-label fw-bold">Font size (px)</label>
+              <div class="input-group">
+                <input id="fontSize" type="number" class="form-control" min="8" max="48" value="12">
+                <span class="input-group-text">px</span>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-4">
+              <label for="structWidth" class="form-label fw-bold">Structure Width (px)</label>
+              <div class="input-group">
+                <input id="structWidth" type="number" class="form-control" min="50" max="500" step="10" value="250">
+                <span class="input-group-text">px</span>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-4">
+              <label for="structHeight" class="form-label fw-bold">Structure Height (px)</label>
+              <div class="input-group">
+                <input id="structHeight" type="number" class="form-control" min="50" max="500" step="10" value="100">
+                <span class="input-group-text">px</span>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label mb-1 fw-bold">Structure rendering</label>
+              <div class="row gy-2">
+                <div class="col-6 col-md-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="renderBB1" checked>
+                    <label class="form-check-label" for="renderBB1">BB1</label>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="renderBB2" checked>
+                    <label class="form-check-label" for="renderBB2">BB2</label>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="renderBB3" checked>
+                    <label class="form-check-label" for="renderBB3">BB3</label>
+                  </div>
+                </div>
+                <div class="col-6 col-md-3">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="renderSmiles" checked>
+                    <label class="form-check-label" for="renderSmiles">SMILES</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label for="zscoreCutoff" class="form-label fw-bold"><i>z</i> score cutoff</label>
+              <div class="input-group">
+                <input id="zscoreCutoff" type="number" class="form-control" value="1.0", step="0.1">
+                <span class="input-group-text">px</span>
+              </div>
+            </div>
+            <div class="col-12 col-md-6">
+              <label for="nTopHits" class="form-label fw-bold">Maximum number of top hits per library</label>
+              <div class="input-group">
+                <input id="nTopHits" type="number" class="form-control" min="1" max="20" step="1" value="5">
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label d-block fw-bold">Colors</label>
+              <div class="row g-2">
+                <div class="col-4">
+                  <div class="d-flex align-items-center">
+                    <label for="colorMono" class="form-label mb-0 me-2">Mono-sython</label>
+                    <input id="colorMono" type="color" class="form-control form-control-color flex-grow-1 w-auto" value="#0000ad"
+                           title="Pick color for mono-sython">
+                  </div>
+                </div>
+
+                <div class="col-4">
+                  <div class="d-flex align-items-center">
+                    <label for="colorDi" class="form-label mb-0 me-2">Di-sython</label>
+                    <input id="colorDi" type="color" class="form-control form-control-color flex-grow-1 w-auto" value="#00ff33"
+                           title="Pick color for di-sython">
+                  </div>
+                </div>
+
+                <div class="col-4">
+                  <div class="d-flex align-items-center">
+                    <label for="colorTri" class="form-label mb-0 me-2">Tri-sython</label>
+                    <input id="colorTri" type="color" class="form-control form-control-color flex-grow-1 w-auto" value="#ffcc00"
+                           title="Pick color for tri-sython">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button id="btnSaveConfig" class="btn btn-primary" data-action="applyConfig">Apply</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="encodingModal" tabindex="-1" aria-labelledby="encodingModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="encodingModalTitle"></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row row-cols-1 row-cols-md-4 g-2 mb-3" id="encodingSMILES"></div>
+          <div id="encodingTable"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="hhModal" tabindex="-1" aria-labelledby="hhModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="hhModalTitle"></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row row-cols-1 row-cols-md-4 g-2 mb-3" id="hhSMILES"></div>
+          <div id="hhTable"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Unsaved Session Warning</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>
+            You are about to upload a new data file. This action will <b>CLEAR ALL CURRENT DATA</b> from the visualizer,
+            including any unsaved selections or previously loaded data.
+          </p>
+          <p class="mb-0">
+            Would you like to <b>SAVE</b> your current session before proceeding with the new upload?
+          </p>
+        </div>
+        <div class="modal-footer d-flex justify-content-end">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-warning" data-action="uploadAnyway">Upload Anyway</button>
+          <button type="button" class="btn btn-primary" data-action="saveAndUpload">Save &amp; Upload</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
+  <script src="https://unpkg.com/dropzone@5/dist/min/dropzone.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pako@2/dist/pako.min.js"></script>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-3.1.0.min.js" charset="utf-8"></script>
+  <script src="https://unpkg.com/tabulator-tables@6.3.1/dist/js/tabulator.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/yuanfeifuzzy/smiles-render@main/smiles-render.js"></script>
+  <script type="text/javascript" src="./js/usage.js"></script>
+  <script type="text/javascript" src="./js/visualizer.js"></script>
+  <script type="text/javascript">
+    document.addEventListener('DOMContentLoaded', () => {
+      Visualizer.init();
+    })
+  </script>
+</body>
+</html>
