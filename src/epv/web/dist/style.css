@@ -1,0 +1,80 @@
+.dropdown-menu {
+  z-index: 9999 !important;
+}
+
+#uploadPanel { height: calc(100vh - 65px) }
+#chartPanel { height: calc(100vh - 65px) }
+
+#hitsModal .modal-dialog, #topHitsModal .modal-dialog { max-width: 95vw; }
+#encodingModal .modal-dialog { max-width: 75vw; }
+#topHitsModal .modal-content { height: 75vh; }
+
+#hitsModal .modal-body, #topHitsModal .modal-body {
+    display: flex;
+    overflow: hidden;
+    padding: 0;
+}
+
+.tabulator-header .tabulator-col .tabulator-col-content {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 42px;
+  min-height: 42px;
+  line-height: 1.2;
+  padding: 0;
+  background-color: transparent !important;
+}
+
+.tabulator-col .tabulator-col-title {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: .25rem;
+  white-space: nowrap;
+  background-color: transparent !important;
+}
+
+.tabulator-row.tabulator-row-even {
+  background-color: transparent !important;
+}
+
+.tabulator-row {
+  background-color: transparent;
+}
+
+.tabulator-row:hover {
+  background-color: #eef5ff !important;
+}
+
+.tabulator-row.tabulator-selected {
+  background-color: #dbeafe !important;
+}
+.tabulator-row.tabulator-selected:hover {
+  background-color: #cfe3ff !important;
+}
+
+.tabulator-cell {
+  background-color: transparent !important;
+}
+
+.tabulator .tabulator-header .tabulator-col,
+.tabulator .tabulator-header .tabulator-col-group {
+  background: white;
+  text-align: center;
+}
+
+.tabulator .tabulator-header .tabulator-col:not(.tabulator-col-group) .tabulator-col-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.border-dotted {
+    border-style: dotted !important;
+}
+
+.bg-neutral {
+    background-color: #f8f9fa;
+}
