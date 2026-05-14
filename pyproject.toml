@@ -1,9 +1,10 @@
 [project]
-name = "enrichment-profile-visualizer"
+name = "epv"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "loguru>=0.7.3",
+    "matplotlib>=3.10.9",
     "polars>=1.40.1",
 ]

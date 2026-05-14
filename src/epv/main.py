@@ -4,6 +4,8 @@ from pathlib import Path
 from datetime import datetime
 from config import OPTIONS, COLUMNS
 from collections.abc import Sequence
+from matplotlib import pyplot as plt
+from matplotlib.ticker import MaxNLocator
 
 import polars as pl
 from loguru import logger
@@ -12,6 +14,57 @@ from loguru import logger
 def log_and_exit(message, code=1):
     logger.error(message)
     sys.exit(code)
+    
+    
+def filter_count(df, **kwargs):
+    filters = {
+        kwargs['xc']: kwargs['x_limit'],
+        kwargs['yc']: kwargs['y_limit']
+    }
+    if 'count_NTC' in df.columns and 'ntc_limit' in kwargs:
+        filters['count_NTC'] = kwargs['ntc_limit']
+        
+    expressions, parts = [], []
+    for key, (low, high) in filters.items():
+        if low is None and high is None:
+            continue
+        
+        if low is not None:
+            expressions.append(pl.col(key) >= low)
+        if high is not None:
+            expressions.append(pl.col(key) <= high)
+        
+        if low is not None and high is not None:
+            parts.append(f"{low} <= {key} <= {high}")
+        elif low is not None:
+            parts.append(f"{key} >= {low}")
+        else:
+            parts.append(f"{key} <= {high}")
+            
+    expr = pl.all_horizontal(expressions) if expressions else None
+    if expr is not None:
+        logger.debug(f'Filtering {df.height:,} compounds with {len(parts):,} filters:')
+        parts = parts if len(parts) == 1 else [f'({p})' for p in parts]
+        fs = ' & '.join(parts)
+        logger.debug(f'  {fs}')
+        df = df.filter(expr)
+        logger.debug(f'Retained {df.height:,} compounds passed {len(parts):,} filters')
+    return df
+
+
+def _enrich(row, xc, xs, ntc):
+    count, score = row[xc], row[xs]
+    count_ntc, score_ntc = row[f'count_{ntc}'], row[f'zscore_{ntc}']
+    if score_ntc > 1 or (score_ntc > 0.5 and count_ntc > 5) or count_ntc > 20:
+        return ''
+
+    if row['nHH'] > 10:
+        return ''
+    if (score >= 1 and 10 <= count < 300) or (score >= 3 and 10 <= count < 100):
+        return 'Weak'
+    elif score > 10 and count >= 300:
+        return 'Strong'
+    return ''
 
 
 def validate_data(table, **kwargs):
@@ -74,13 +127,17 @@ def validate_data(table, **kwargs):
             log_and_exit(f'The specified y: {y} does not found in any count or zscore column')
     else:
         y = 'NTC' if 'NTC' in [name.upper() for name in names] else names[1]
+        
+    ntc = [name for name in names if name.lower() == 'ntc']
+    ntc = ntc[0] if ntc else ''
     
     options['x'] = x
     options['y'] = y
+    options['ntc'] = ntc
     options['xc'], options['xs'] = f'count_{x}', f'zscore_{x}'
     options['yc'], options['ys'] = f'count_{y}', f'zscore_{y}'
-    options['x_label'] = kwargs.get('x_label', f'zscore ({x})')
-    options['y_label'] = kwargs.get('y_label', f'zscore ({y})')
+    options['x_label'] = kwargs.get('x_label', f'{x} (zscore)')
+    options['y_label'] = kwargs.get('y_label', f'{y} (zscore)')
     
     libraries = kwargs.get('libraries', [])
     libs = df['library'].unique().to_list()
@@ -102,6 +159,10 @@ def validate_data(table, **kwargs):
     
     options['cards'] = kwargs.get('cards', OPTIONS['cards']['default'])
     options['date'] = kwargs.get('date', datetime.now().strftime('%m%d%Y'))
+    options['x_limit'] = kwargs.get('x_limit', OPTIONS['x_limit']['default'])
+    options['y_limit'] = kwargs.get('y_limit', OPTIONS['y_limit']['default'])
+    options['ntc_limit'] = kwargs.get('ntc_limit', OPTIONS['ntc_limit']['default'])
+    options['dpi'] = kwargs.get('dpi', OPTIONS['dpi']['default'])
     
     options['outdir'] = Path(kwargs.get('outdir', table.parent.absolute()))
     if not options['outdir'].exists():
@@ -110,28 +171,111 @@ def validate_data(table, **kwargs):
 
 
 def process_data(df, **kwargs):
-    stat = {}
+    logger.debug(f'Identifying unique compounds from {df.height:,} features ...')
+    df = (df.sort(kwargs['xs'], descending=True).unique(subset=['library', 'c1_smiles', 'c2_smiles', 'c3_smiles']))
+    logger.debug(f'Retained {df.height:,} unique features')
+    
+    df = filter_count(df, **kwargs)
+    
+    df = df.with_columns(
+        pl.when(~pl.col('history_hits').is_null())
+        .then(pl.col('history_hits').str.count_matches(';') + 1)
+        .otherwise(0)
+        .alias('nHH')
+    )
+    
+    colors = {str(i): kwargs['colors'][i // 3] for i in range(7)}
+    df = df.with_columns(pl.col('axis').cast(pl.String).replace(colors).alias('color'))
+    
+    xc, ntc = kwargs['xc'], kwargs['ntc']
     xs, ys = kwargs['xs'], kwargs['ys']
-    limits = df.group_by('library').agg(
+    if ntc:
+        df = df.with_columns(
+                pl.struct([kwargs['xc'], kwargs['xs'], f'count_{ntc}', f'zscore_{ntc}', 'history_hits', 'nHH'])
+                .map_elements(lambda row: _enrich(row, xc, xs, ntc), return_dtype=pl.String)
+                .alias('enrichment')
+        )
+    else:
+        df = df.with_columns(pl.lit('').alias('enrichment'))
+        
+    dd = df.group_by('library').agg(
             pl.col(xs).min().alias(f'x_min'),
             pl.col(xs).max().alias(f'x_max'),
             pl.col(ys).min().alias(f'y_min'),
             pl.col(ys).max().alias(f'y_max'),
     )
-    stat['limits'] = {
-        'min': min(limits['x_min'].min(), limits['y_min'].min()),
-        'max': max(limits['x_max'].max(), limits['y_max'].max())
+    limits = {
+        'min': min(dd['x_min'].min(), dd['y_min'].min()),
+        'max': max(dd['x_max'].max(), dd['y_max'].max())
     }
-    for row in limits.to_dicts():
-        stat['limits'][row.pop('library')] = row
+    logger.debug(f"Dataset {limits}")
+    
+    for row in dd.to_dicts():
+        library = row.pop('library')
+        limits[library] = row
+        logger.debug(f'{library} {row}')
+    
+    
+    return df, limits
 
 
-def overview_plot(df, **kwargs):
+def overview_plot(df, limits, **kwargs):
     image = kwargs['outdir'].joinpath('overview.png')
-    if image.exists():
-        logger.debug('Overview plot already exists')
-    else:
-        pass
+    libraries = kwargs['libraries']
+    num, cols = len(libraries), 6
+    rows, mod = divmod(num, cols)
+    rows = rows + 1 if mod else (rows or 1)
+
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(18, 9))
+    for i, ax in enumerate(axes.flatten()):
+        row, col = divmod(i, cols)
+        try:
+            library = libraries[i]
+        except IndexError:
+            axes[row - 1][col].xaxis.set_major_locator(MaxNLocator(nbins=4))
+            
+            ax.set_xticks([]), ax.set_xticklabels([])
+            ax.set_yticks([]), ax.set_yticklabels([])
+            ax.get_xaxis().set_visible(False), ax.get_yaxis().set_visible(False)
+            
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            continue
+        dl = df.filter(pl.col('library') == library)
+        enrichment = dl['enrichment'].to_list()
+        if 'Weak' in enrichment:
+            color = '#FF7375'
+        elif 'Strong' in enrichment:
+            color = '#E60003'
+        else:
+            color = 'black'
+        
+        ax.scatter(dl[kwargs['xs']], dl[kwargs['ys']], c=dl['color'],
+                   s=60, edgecolors='lightgray', lw=0.3, zorder=2)
+        
+        ax.set_title(library, fontweight='bold', color=color, y=0.88)
+        ax.axvline(x=0, color='lightgray', lw=0.5)
+        ax.axhline(y=0, color='lightgray', lw=0.5)
+        ax.set_xlim(limits['min'], limits['max'])
+        ax.set_ylim(limits['min'], limits['max'])
+        
+        if row == rows - 1:
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+        else:
+            ax.set_xticks([])
+        if col == 0:
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        else:
+            ax.set_yticks([])
+    
+    fig.text(0.5, 0.01, kwargs['x_label'], ha='center', va='center', fontsize=12)
+    fig.text(0.02, 0.5, kwargs['y_label'], ha='center', va='center', rotation='vertical', fontsize=12)
+    
+    fig.subplots_adjust(left=0.05, right=0.99, top=0.97, bottom=0.05, wspace=0.06, hspace=0.05)
+    fig.savefig(image, dpi=kwargs['dpi'])
+    logger.debug(f'Overview plot was saved to {image}\n')
 
 
 def interface(func):
@@ -189,9 +333,10 @@ def epv(table: str | Path, **kwargs):
     logger.add(sys.stdout, format=formatter, level=level)
     
     df, options = validate_data(table, **kwargs)
-    process_data(df, **options)
+    unique, limits = process_data(df, **options)
+    overview_plot(unique, limits, **options)
     
     
 if __name__ == '__main__':
-    epv(Path('.').resolve().parent.parent / 'data/fake.data.tsv.gz')
+    epv(Path('__file__').resolve().parent / 'data/fake.data.tsv.gz', verbose=True)
     
