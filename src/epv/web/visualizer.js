@@ -65,8 +65,8 @@
       zscoreCutoff: Number(q('zscoreCutoff')?.value || 1.0),
 
       colors: {
-        mono: q('colorMono')?.value || '#0d6efd',
-        di:   q('colorDi')?.value   || '#6f42c1',
+        mono: q('colorMono')?.value || '#0000ad',
+        di:   q('colorDi')?.value   || '#00ff33',
         tri:  q('colorTri')?.value  || '#ffcc00',
       },
     };
