@@ -220,7 +220,7 @@ class Card:
         arrow = FancyArrowPatch(self.point, bottom_center, arrowstyle="-", color='gray', lw=0.5)
         self.ax.add_patch(arrow)
         
-        self.smiles_image(self.ax, self.smiles, self.width, self.width, x=self.x, y=self.y * 0.6)
+        self.smiles_image(self.ax, self.smiles, self.width, self.width, x=self.x, y=self.y)
     
     @staticmethod
     def transparent_image(width=500, height=200):
@@ -237,8 +237,9 @@ class Card:
         func = partial(AnnotationBbox, xy=(0.5, 0),
                        boxcoords='data',
                        xycoords='axes fraction',
-                       box_alignment=(0.0, 1.02), pad=0, frameon=True)
+                       box_alignment=(0.0, 1.0), pad=0, frameon=True)
         
+        yy = [0.59, 0.74, 0.89, 1.04]
         for i, smi in enumerate(smiles):
             mol = Chem.MolFromSmiles(str(smi).split()[0])
             if mol:
@@ -270,10 +271,8 @@ class Card:
             else:
                 image = self.transparent_image()
             art = OffsetImage(image, zoom=zoom)
-                
-            ax.add_artist(func(art, xybox=(x, y)))
-            print(y, height, y + height)
-            y += height
+            
+            ax.add_artist(func(art, xybox=(x, y * yy[i])))
         
     def __str__(self):
         return f'{self.compound or "Compound"} {self.pos} {self.smiles[0]}'
