@@ -1,19 +1,14 @@
-import sys
 import functools
 from pathlib import Path
-from datetime import datetime
-from config import OPTIONS, COLUMNS
-from collections.abc import Sequence
+from matplotlib.lines import Line2D
 from matplotlib import pyplot as plt
 from matplotlib.ticker import MaxNLocator
+from matplotlib.offsetbox import AnchoredText
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+import numpy as np
 import polars as pl
-from loguru import logger
-
-
-def log_and_exit(message, code=1):
-    logger.error(message)
-    sys.exit(code)
+from config import OPTIONS, Card, logger, config_logger, log_and_exit, validate_data_and_options
     
     
 def filter_count(df, **kwargs):
@@ -52,6 +47,13 @@ def filter_count(df, **kwargs):
     return df
 
 
+def find_top_hits(df, **kwargs):
+    xs, yc = kwargs['xs'], kwargs['yc']
+    return df.filter((pl.col('axis') == 6) &
+                     (pl.col(xs) >= kwargs['top_hits'][0]) &
+                     (pl.col(yc) <= kwargs['top_hits'][1])).sort(kwargs['ys'], descending=True)
+
+
 def _enrich(row, xc, xs, ntc):
     count, score = row[xc], row[xs]
     count_ntc, score_ntc = row[f'count_{ntc}'], row[f'zscore_{ntc}']
@@ -67,112 +69,9 @@ def _enrich(row, xc, xs, ntc):
     return ''
 
 
-def validate_data(table, **kwargs):
-    options = {}
-    table = Path(table)
-    logger.debug(f'Loading data from {table} ...')
-    df = pl.read_csv(table, separator='\t')
-    logger.debug(f'Loaded {df.height:,} features from {table.name}')
-    
-    columns = df.columns
-    missing_columns = set(COLUMNS) - set(columns)
-    if missing_columns:
-        logger.error(f'Table {table.name} has missing columns: {missing_columns}')
-        sys.exit(1)
-    
-    count_columns, score_columns = kwargs.get('count_columns', []), kwargs.get('score_columns', [])
-    if count_columns:
-        if not set(count_columns).issubset(columns):
-            ms = set(count_columns) - set(columns)
-            log_and_exit(f'Specified count columns: {ms} not found in the table')
-    else:
-        count_columns = [column for column in columns if column.startswith('count_')]
-        if not count_columns:
-            log_and_exit('Failed to find count columns (columns start with count_)')
-    count_columns = sorted(count_columns)
-    
-    if score_columns:
-        if not set(score_columns).issubset(columns):
-            ms = set(score_columns) - set(columns)
-            log_and_exit(f'Specified zscore columns: {ms} not found in the table')
-    else:
-        score_columns = [column for column in columns if column.startswith('zscore_')]
-        if not score_columns:
-            log_and_exit('Failed to find zscore columns (columns start with zscore_')
-    score_columns = sorted(score_columns)
-    
-    names = [column.replace('count_', '') for column in count_columns]
-    n2 = [column.replace('zscore_', '') for column in score_columns]
-    if names != n2:
-        logger.error('Names of count and zscore columns mismatch:')
-        log_and_exit(f'  {names} != {n2}')
-        
-    if len(names) < 2:
-        log_and_exit(f'Insufficient count or zscore columns: {len(names)}, at least 2 columns needed')
-    
-    options['count_columns'] = count_columns
-    options['score_columns'] = score_columns
-    options['names'] = names
-    
-    
-    x, y = kwargs.get('x', ''), kwargs.get('y', '')
-    if x:
-        if x not in names:
-            log_and_exit(f'The specified x: {x} does not found in any count or zscore column')
-    else:
-        x = [name for name in names if name.upper() != 'NTC'][0]
-        
-    if y:
-        if y not in names:
-            log_and_exit(f'The specified y: {y} does not found in any count or zscore column')
-    else:
-        y = 'NTC' if 'NTC' in [name.upper() for name in names] else names[1]
-        
-    ntc = [name for name in names if name.lower() == 'ntc']
-    ntc = ntc[0] if ntc else ''
-    
-    options['x'] = x
-    options['y'] = y
-    options['ntc'] = ntc
-    options['xc'], options['xs'] = f'count_{x}', f'zscore_{x}'
-    options['yc'], options['ys'] = f'count_{y}', f'zscore_{y}'
-    options['x_label'] = kwargs.get('x_label', f'{x} (zscore)')
-    options['y_label'] = kwargs.get('y_label', f'{y} (zscore)')
-    
-    libraries = kwargs.get('libraries', [])
-    libs = df['library'].unique().to_list()
-    if libraries:
-        ms = set(libraries) - set(libs)
-        if ms:
-            log_and_exit(f'Specified libraries: {ms} not found in table')
-        options['libraries'] = list(libraries)
-    else:
-        options['libraries'] = libs
-        
-    colors = kwargs.get('colors', OPTIONS['colors']['default'])
-    if not isinstance(colors, Sequence):
-        log_and_exit(f'Invalid colors: {colors}. Colors must be a sequence of 3 hex color code strings')
-    colors = list(colors)
-    if len(colors) != 3:
-        log_and_exit(f'Invalid colors: {colors}. Colors must be a sequence of 3 hex color code strings')
-    options['colors'] = colors
-    
-    options['cards'] = kwargs.get('cards', OPTIONS['cards']['default'])
-    options['date'] = kwargs.get('date', datetime.now().strftime('%m%d%Y'))
-    options['x_limit'] = kwargs.get('x_limit', OPTIONS['x_limit']['default'])
-    options['y_limit'] = kwargs.get('y_limit', OPTIONS['y_limit']['default'])
-    options['ntc_limit'] = kwargs.get('ntc_limit', OPTIONS['ntc_limit']['default'])
-    options['dpi'] = kwargs.get('dpi', OPTIONS['dpi']['default'])
-    
-    options['outdir'] = Path(kwargs.get('outdir', table.parent.absolute()))
-    if not options['outdir'].exists():
-        options['outdir'].mkdir(exist_ok=True, parents=True)
-    return df, options
-
-
 def process_data(df, **kwargs):
     logger.debug(f'Identifying unique compounds from {df.height:,} features ...')
-    df = (df.sort(kwargs['xs'], descending=True).unique(subset=['library', 'c1_smiles', 'c2_smiles', 'c3_smiles']))
+    df = (df.sort(kwargs['xs'], descending=True).unique(subset=['library', 'C1_SMILES', 'C2_SMILES', 'C3_SMILES']))
     logger.debug(f'Retained {df.height:,} unique features')
     
     df = filter_count(df, **kwargs)
@@ -226,7 +125,7 @@ def overview_plot(df, limits, **kwargs):
     rows, mod = divmod(num, cols)
     rows = rows + 1 if mod else (rows or 1)
 
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(18, 9))
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(kwargs['figure_width'], kwargs['figure_height']))
     for i, ax in enumerate(axes.flatten()):
         row, col = divmod(i, cols)
         try:
@@ -253,7 +152,7 @@ def overview_plot(df, limits, **kwargs):
             color = 'black'
         
         ax.scatter(dl[kwargs['xs']], dl[kwargs['ys']], c=dl['color'],
-                   s=60, edgecolors='lightgray', lw=0.3, zorder=2)
+                   s=kwargs['circle_sizes'][0], edgecolors='#6f6f6f', lw=0.3, zorder=2)
         
         ax.set_title(library, fontweight='bold', color=color, y=0.88)
         ax.axvline(x=0, color='lightgray', lw=0.5)
@@ -276,6 +175,112 @@ def overview_plot(df, limits, **kwargs):
     fig.subplots_adjust(left=0.05, right=0.99, top=0.97, bottom=0.05, wspace=0.06, hspace=0.05)
     fig.savefig(image, dpi=kwargs['dpi'])
     logger.debug(f'Overview plot was saved to {image}\n')
+
+
+def adjust_limits_for_marker(ax, limit: dict, s=500, offset_pts=10):
+    # 1. Calculate marker radius in points
+    # Area s = pi * r^2  => r = sqrt(s/pi)
+    radius_pts = np.sqrt(s / np.pi)
+    
+    # 2. Total physical padding needed (radius + your offset)
+    total_pad_pts = radius_pts + offset_pts
+    
+    # 3. Convert points to inches (72 points = 1 inch)
+    pad_inches = total_pad_pts / 72.0
+    
+    # 4. Get the current axes size in inches
+    # This requires the renderer to have run, or we use the figure size
+    fig = ax.figure
+    bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+    ax_width_in, ax_height_in = bbox.width, bbox.height
+    
+    # 5. Calculate data ranges
+    x_min, x_max, y_min, y_max = limit['x_min'], limit['x_max'], limit['y_min'], limit['y_max']
+    x_range, y_range = x_max - x_min, y_max - y_min
+    
+    # 6. Convert physical padding to data units
+    # (Padding_Inches / Total_Inches) * Total_Data_Range
+    x_pad_data = (pad_inches / ax_width_in) * x_range
+    y_pad_data = (pad_inches / ax_height_in) * y_range
+    
+    ax.set_xlim(x_min - x_pad_data, x_max + x_pad_data)
+    ax.set_ylim(y_min - y_pad_data, y_max + y_pad_data)
+    
+    
+def set_title_legend(ax, library, **kwargs):
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="8%", pad=0)
+    cax.get_xaxis().set_visible(False)
+    cax.get_yaxis().set_visible(False)
+    cax.add_artist(AnchoredText(library, loc='upper right', prop=dict(size=14, fontweight='bold'), frameon=False))
+    
+    c1, c2, c3 = kwargs['colors']
+    options = {'marker': 'o', 'markersize': 15, 'markeredgecolor': '#6f6f6f', 'color': 'w'}
+    legends = [Line2D([0], [0], label='Mono-', markerfacecolor=c1, **options),
+               Line2D([0], [0], label='Di-', markerfacecolor=c2, **options),
+               Line2D([0], [0], label='Tri-Sython', markerfacecolor=c3, **options)]
+    cax.legend(handles=legends, loc='center left', bbox_to_anchor=(0, 0.5), frameon=False, ncol=3, fontsize=10)
+    
+    
+def compound_cards(df, du, ax, **kwargs):
+    n, tops = kwargs['cards'], find_top_hits(du, **kwargs)
+    if n and not tops.is_empty():
+        tops, cards = tops.slice(0, n).reverse(), []
+        low, high = tops[kwargs['xs']].min(), tops[kwargs['xs']].min()
+        pad = (high - low) * 0.02
+        card_width = (high - low - 5 * pad) / 6
+        
+        for row in tops.iter_rows(named=True):
+            smiles_columns, show_smiles = kwargs['smiles_columns'], kwargs['show_smiles']
+            smiles_columns = [s for s in smiles_columns if s != 'SMILES']
+            smiles = ['SMILES'] + smiles_columns if show_smiles else smiles_columns
+            data = {name: f'{row[cc]} ({row[sc]})'
+                    for name, cc, sc in zip(kwargs['names'], kwargs['count_columns'], kwargs['score_columns'])}
+            data['nHH'] = row['nHH']
+            pos = row[kwargs['xs']] - (card_width / 2)
+            if cards:
+                previous, last = cards[-1], cards[0]
+                if pos + card_width + pad > previous.pos:
+                    offset = pos + card_width + pad - previous.pos
+                    if last.pos + card_width > high:
+                        pos -= offset
+                    else:
+                        for card in cards:
+                            card.pos += offset
+            card = Card(row.get('compound', ''), pos, smiles, data)
+            cards.append(card)
+            
+        for card in cards:
+            print(card)
+    else:
+        if n:
+            logger.debug('No top hits was found, no compound card will be drawn')
+        else:
+            logger.debug('No top hits was found, no compound card will be drawn')
+    
+    
+def library_plot(df, du, library, limits, **kwargs):
+    logger.debug(f'Plotting library {library} ...')
+    dd = du.filter(pl.col('library') == library)
+    if dd.height == 0:
+        logger.debug(f'No compounds passed filters, skip plotting library {library}')
+    else:
+        limit = limits[library]
+        logger.debug(f'Setting figure limits to {limit}')
+        ax = kwargs.get('ax', None)
+        fig, ax = (plt, ax) if ax else plt.subplots(figsize=(kwargs['figure_width'], kwargs['figure_height']))
+        ax.scatter(dd[kwargs['xs']], dd[kwargs['ys']], c=dd['color'], s=kwargs['circle_sizes'][1], edgecolors='#6f6f6f',
+                   lw=0.25, zorder=2, clip_on=False)
+            
+        ax.set_xlabel(kwargs['x_label'], fontsize=12), ax.set_ylabel(kwargs['y_label'], fontsize=12)
+        adjust_limits_for_marker(ax, limit, s=kwargs['circle_sizes'][1])
+        set_title_legend(ax, library, **kwargs)
+        compound_cards(df, du, ax, **kwargs)
+        
+        image = kwargs['outdir'].joinpath(f'{library}.png')
+        fig.savefig(image, dpi=kwargs['dpi'])
+        logger.debug(f'Library plot was saved to {image.name}\n')
+        plt.close()
 
 
 def interface(func):
@@ -325,18 +330,16 @@ def epv(table: str | Path, **kwargs):
     :type table: str | Path
     """
     
-    verbose = kwargs.get('verbose', OPTIONS['verbose']['default'])
+    config_logger(kwargs.get('verbose', OPTIONS['verbose']['default']))
     
-    logger.remove()
-    level = "DEBUG" if verbose else "INFO"
-    formatter = '<level>[{time:YYYY-MM-DD HH:mm:ss}] {message}</level>'
-    logger.add(sys.stdout, format=formatter, level=level)
-    
-    df, options = validate_data(table, **kwargs)
+    df, options = validate_data_and_options(table, **kwargs)
     unique, limits = process_data(df, **options)
-    overview_plot(unique, limits, **options)
+    # overview_plot(unique, limits, **options)
+    for library in options['libraries']:
+        library_plot(df, unique, library, limits, **options)
     
     
 if __name__ == '__main__':
-    epv(Path('__file__').resolve().parent / 'data/fake.data.tsv.gz', verbose=True)
+    epv(Path('__file__').resolve().parent / 'data/fake.data.tsv.gz', verbose=True, libraries=['qDOS18_1'],
+        top_hits=[0.004, 0])
     
