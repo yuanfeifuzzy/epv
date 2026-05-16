@@ -1,10 +1,25 @@
+import io
 import sys
 from pathlib import Path
+from functools import partial
 from datetime import datetime
 from collections.abc import Sequence
 
+from rdkit import Chem, RDLogger
+from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem import Draw, Descriptors
+
 import polars as pl
+from PIL import Image
 from loguru import logger
+from matplotlib.lines import Line2D
+from matplotlib import pyplot as plt
+from matplotlib.transforms import Bbox
+from matplotlib.ticker import MaxNLocator
+from matplotlib.offsetbox import AnchoredText
+from matplotlib.patches import FancyArrowPatch
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox, DrawingArea, TextArea
 
 OPTIONS = {
     'x': {'help': 'A column name will be assigned as x variable'},
@@ -175,11 +190,90 @@ def validate_data_and_options(table, **kwargs):
 class Card:
     """A compound card"""
     
-    def __init__(self, compound, pos, smiles, data):
+    def __init__(self, compound, smiles, data, point, x, y, width, ax, fig):
         self.compound = compound
-        self.pos = pos
         self.smiles = smiles
         self.data = data
+        self.point = point
+        self.x = x
+        self.y = y
+        self.width = width
+        self.ax = ax
+        self.fig = fig
+        
+    def render(self):
+        ab = AnnotationBbox(
+                DrawingArea(150, 335, 0, 0),
+                self.point,
+                xybox=(self.x, self.y * 0.2),
+                xycoords='data',
+                boxcoords="data",
+                box_alignment=(0, 0)
+        )
+        self.ax.add_artist(ab)
+        
+        invert = self.ax.transData.inverted()
+        
+        renderer = self.fig.canvas.get_renderer()
+        box = ab.get_window_extent(renderer=renderer)
+        bottom_center = invert.transform((box.x0 + box.width * 0.5, box.y0))
+        arrow = FancyArrowPatch(self.point, bottom_center, arrowstyle="-", color='gray', lw=0.5)
+        self.ax.add_patch(arrow)
+        
+        self.smiles_image(self.ax, self.smiles, self.width, self.width, x=self.x, y=self.y * 0.6)
+    
+    @staticmethod
+    def transparent_image(width=500, height=200):
+        image = np.zeros((height, width, 4), dtype=np.uint8)
+        image[:, :, 3] = 0
+        return image
+    
+    @staticmethod
+    def smiles_image(ax, smiles: list, width, height,
+                     x=0.0, y=0.0, zoom=0.3, y_offset=0.1,
+                     bond_length=15, bond_line_width=1.0):
+        sss = ['c1_smiles', 'c2_smiles', 'c3_smiles']
+        label = True
+        func = partial(AnnotationBbox, xy=(0.5, 0),
+                       boxcoords='data',
+                       xycoords='axes fraction',
+                       box_alignment=(0.0, 1.02), pad=0, frameon=True)
+        
+        for i, smi in enumerate(smiles):
+            mol = Chem.MolFromSmiles(str(smi).split()[0])
+            if mol:
+                drawer = Draw.MolDraw2DCairo(500, 200)
+                options = drawer.drawOptions()
+                options.bondLineWidth = bond_line_width
+                options.fixedBondLength = bond_length
+                options.additionalAtomLabelPadding = 0.05
+                options.addAtomIndices = False
+                options.includeAtomTags = False
+                options.addStereoAnnotation = True
+                
+                Chem.rdDepictor.Compute2DCoords(mol)
+                Draw.rdMolDraw2D.PrepareMolForDrawing(mol)
+                
+                if i == 3:
+                    mw = Descriptors.MolWt(mol)
+                    alogp = Descriptors.MolLogP(mol)
+                    legend = f"MW: {mw:.0f}, ALogP: {alogp:.2f}"
+                    options.useBWAtomPalette()
+                    options.legendFraction = 0.2
+                else:
+                    legend = ''
+                drawer.DrawMolecule(mol, legend=legend)
+                drawer.FinishDrawing()
+                image_data = drawer.GetDrawingText()
+                image = Image.open(io.BytesIO(image_data))
+                drawer.ClearDrawing()
+            else:
+                image = self.transparent_image()
+            art = OffsetImage(image, zoom=zoom)
+                
+            ax.add_artist(func(art, xybox=(x, y)))
+            print(y, height, y + height)
+            y += height
         
     def __str__(self):
         return f'{self.compound or "Compound"} {self.pos} {self.smiles[0]}'

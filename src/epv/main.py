@@ -51,7 +51,7 @@ def find_top_hits(df, **kwargs):
     xs, yc = kwargs['xs'], kwargs['yc']
     return df.filter((pl.col('axis') == 6) &
                      (pl.col(xs) >= kwargs['top_hits'][0]) &
-                     (pl.col(yc) <= kwargs['top_hits'][1])).sort(kwargs['ys'], descending=True)
+                     (pl.col(yc) <= kwargs['top_hits'][1])).sort(kwargs['xs'], descending=True)
 
 
 def _enrich(row, xc, xs, ntc):
@@ -222,36 +222,56 @@ def set_title_legend(ax, library, **kwargs):
     cax.legend(handles=legends, loc='center left', bbox_to_anchor=(0, 0.5), frameon=False, ncol=3, fontsize=10)
     
     
-def compound_cards(df, du, ax, **kwargs):
+def position_cards(left: float, right: float, scores: list):
+    pad = (right - left) * 0.02
+    width = (right - left - 5 * pad) / 6
+    half = width / 2
+    print(f'left: {left}, right: {right}, width: {width}, pad: {pad}, scores: {scores}')
+    n, xs = len(scores), []
+    for i, score in enumerate(scores):
+        x = score - half
+        if score < left:
+            x = left
+        elif score + width > right:
+            x = right - width
+        if i == 0:
+            xs.append(x)
+        else:
+            if xs:
+                previous = xs[-1]
+                if previous + pad + width > x:
+                    offset = previous + pad + width - x
+                    if offset + x + width > right:
+                        xs = [p - offset for p in xs]
+                        xs.append(x)
+                    else:
+                        xs.append(x+offset)
+                else:
+                    xs.append(x)
+            else:
+                xs.append(x)
+    return xs, width
+    
+    
+def compound_cards(df, du, ax, fig, **kwargs):
     n, tops = kwargs['cards'], find_top_hits(du, **kwargs)
     if n and not tops.is_empty():
         tops, cards = tops.slice(0, n).reverse(), []
-        low, high = tops[kwargs['xs']].min(), tops[kwargs['xs']].min()
-        pad = (high - low) * 0.02
-        card_width = (high - low - 5 * pad) / 6
+        left, right = min(du[kwargs['xs']]), max(du[kwargs['xs']])
+        xs, width = position_cards(left, right, tops[kwargs['xs']].to_list())
+        y = du[kwargs['ys']].max()
         
-        for row in tops.iter_rows(named=True):
+        for x, row in zip(xs, tops.iter_rows(named=True)):
             smiles_columns, show_smiles = kwargs['smiles_columns'], kwargs['show_smiles']
             smiles_columns = [s for s in smiles_columns if s != 'SMILES']
             smiles = ['SMILES'] + smiles_columns if show_smiles else smiles_columns
+            smiles = [row[s] for s in smiles]
             data = {name: f'{row[cc]} ({row[sc]})'
                     for name, cc, sc in zip(kwargs['names'], kwargs['count_columns'], kwargs['score_columns'])}
             data['nHH'] = row['nHH']
-            pos = row[kwargs['xs']] - (card_width / 2)
-            if cards:
-                previous, last = cards[-1], cards[0]
-                if pos + card_width + pad > previous.pos:
-                    offset = pos + card_width + pad - previous.pos
-                    if last.pos + card_width > high:
-                        pos -= offset
-                    else:
-                        for card in cards:
-                            card.pos += offset
-            card = Card(row.get('compound', ''), pos, smiles, data)
-            cards.append(card)
-            
-        for card in cards:
-            print(card)
+            point = (row[kwargs['xs']], row[kwargs['ys']])
+            card = Card(row.get('compound', ''), smiles, data, point, x, y, width, ax, fig)
+            card.render()
     else:
         if n:
             logger.debug('No top hits was found, no compound card will be drawn')
@@ -275,7 +295,7 @@ def library_plot(df, du, library, limits, **kwargs):
         ax.set_xlabel(kwargs['x_label'], fontsize=12), ax.set_ylabel(kwargs['y_label'], fontsize=12)
         adjust_limits_for_marker(ax, limit, s=kwargs['circle_sizes'][1])
         set_title_legend(ax, library, **kwargs)
-        compound_cards(df, du, ax, **kwargs)
+        compound_cards(df, dd, ax, fig, **kwargs)
         
         image = kwargs['outdir'].joinpath(f'{library}.png')
         fig.savefig(image, dpi=kwargs['dpi'])
@@ -342,4 +362,5 @@ def epv(table: str | Path, **kwargs):
 if __name__ == '__main__':
     epv(Path('__file__').resolve().parent / 'data/fake.data.tsv.gz', verbose=True, libraries=['qDOS18_1'],
         top_hits=[0.004, 0])
+    # position_cards(0, 10, [8, 9])
     
