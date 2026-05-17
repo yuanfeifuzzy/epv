@@ -15,9 +15,9 @@ from loguru import logger
 from matplotlib.lines import Line2D
 from matplotlib import pyplot as plt
 from matplotlib.transforms import Bbox
+from matplotlib.patches import Rectangle
 from matplotlib.ticker import MaxNLocator
 from matplotlib.offsetbox import AnchoredText
-from matplotlib.patches import FancyArrowPatch
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox, DrawingArea, TextArea
 
@@ -32,14 +32,29 @@ OPTIONS = {
 }
 
 
+class Box:
+    def __init__(self, ax, point, x, y, width: float = 1.0, height: float = 1.0, color='black'):
+        self.ax = ax
+        self.point = point
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.color = color
+    
+    def draw(self):
+        box = Rectangle((self.x, self.y), self.width, self.height, ec=self.color, fc='white', zorder=5)
+        self.ax.add_patch(box)
+        line = Line2D([self.point[0], self.x + self.width / 2], [self.point[1], self.y], lw=1, color='gray')
+        self.ax.add_line(line)
+
+
 def position_cards(ax, scores: list):
     """
     A helper function for position_cards near the data point as close as possible
     """
     
-    # TODO: fine tune the right padding
     left, right = ax.get_xlim()
-    print(left, right)
     n, xs = len(scores), []
     pad = (right - left) * 0.01
     width = (right - left - pad * 7) / 6
@@ -108,51 +123,28 @@ def smiles_image(smiles: str, width: int = 500, height: int = 200,
 class Card:
     """A compound card"""
     
-    def __init__(self, compound, smiles, data, point, x, y, width, ax, fig):
+    def __init__(self, ax, pos, width, point, compound, smiles, data):
+        self.ax = ax
+        self.x = pos
+        self.width = width
+        self.point = point
         self.compound = compound
         self.smiles = smiles
         self.data = data
-        self.point = point
-        self.x = x
-        self.y = y
-        self.width = width
-        self.ax = ax
-        self.fig = fig
         
-    def render(self):
-        ab = AnnotationBbox(
-                DrawingArea(150, 335, 0, 0),
-                self.point,
-                xybox=(self.x, self.y * 0.2),
-                xycoords='data',
-                boxcoords="data",
-                box_alignment=(0, 0)
-        )
-        self.ax.add_artist(ab)
-
-        invert = self.ax.transData.inverted()
-
-        renderer = self.fig.canvas.get_renderer()
-        box = ab.get_window_extent(renderer=renderer)
-        bottom_center = invert.transform((box.x0 + box.width * 0.5, box.y0))
-        arrow = FancyArrowPatch(self.point, bottom_center, arrowstyle="-", color='gray', lw=0.5)
-        self.ax.add_patch(arrow)
-        
+    def draw(self):
         y = self.ax.get_ylim()[1]
         for i, smiles in enumerate(self.smiles):
             image = smiles_image(smiles, legend=i == 3)
             box = AnnotationBbox(
-                OffsetImage(image, zoom=0.3),
-                xy=(0.5, 0),
-                xybox=(self.x, y * (0.4 + i * 0.15)),
-                xycoords='axes fraction',
-                boxcoords="data",
-                box_alignment=(0, 0),
-                pad=0, frameon=True
+                OffsetImage(image, zoom=0.30),
+                xy=(0.5, 0), xybox=(self.x, y * (0.4 + i * 0.15)),
+                xycoords='axes fraction', boxcoords="data",
+                box_alignment=(-0.02, 0.01), pad=0, frameon=False, zorder=10
             )
             self.ax.add_artist(box)
+            
+        Box(self.ax, self.point, self.x, y * 0.2, width=self.width, height=y * 0.795).draw()
     
-        
     def __str__(self):
         return f'{self.compound or "Compound"} {self.pos} {self.smiles[0]}'
-        

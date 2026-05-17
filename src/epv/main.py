@@ -228,7 +228,6 @@ def compound_cards(df, du, ax, fig, **kwargs):
     if n and not tops.is_empty():
         tops, cards = tops.slice(0, n).reverse(), []
         xs, width = position_cards(ax, tops[kwargs['xs']].to_list())
-        y = du[kwargs['ys']].max()
         
         for x, row in zip(xs, tops.iter_rows(named=True)):
             smiles_columns, show_smiles = kwargs['smiles_columns'], kwargs['show_smiles']
@@ -239,8 +238,8 @@ def compound_cards(df, du, ax, fig, **kwargs):
                     for name, cc, sc in zip(kwargs['names'], kwargs['count_columns'], kwargs['score_columns'])}
             data['nHH'] = row['nHH']
             point = (row[kwargs['xs']], row[kwargs['ys']])
-            card = Card(row.get('compound', ''), smiles, data, point, x, y, width, ax, fig)
-            card.render()
+            card = Card(ax, x, width, point, row.get('compound', ''), smiles, data)
+            card.draw()
     else:
         if n:
             logger.debug('No top hits was found, no compound card will be drawn')
