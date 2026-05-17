@@ -8,7 +8,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import numpy as np
 import polars as pl
-from config import OPTIONS, Card, logger, config_logger, log_and_exit, validate_data_and_options
+from drawer import Card, position_cards
+from config import OPTIONS, logger, config_logger, log_and_exit, validate_data_and_options
     
     
 def filter_count(df, **kwargs):
@@ -222,43 +223,11 @@ def set_title_legend(ax, library, **kwargs):
     cax.legend(handles=legends, loc='center left', bbox_to_anchor=(0, 0.5), frameon=False, ncol=3, fontsize=10)
     
     
-def position_cards(left: float, right: float, scores: list):
-    pad = (right - left) * 0.02
-    width = (right - left - 5 * pad) / 6
-    half = width / 2
-    print(f'left: {left}, right: {right}, width: {width}, pad: {pad}, scores: {scores}')
-    n, xs = len(scores), []
-    for i, score in enumerate(scores):
-        x = score - half
-        if score < left:
-            x = left
-        elif score + width > right:
-            x = right - width
-        if i == 0:
-            xs.append(x)
-        else:
-            if xs:
-                previous = xs[-1]
-                if previous + pad + width > x:
-                    offset = previous + pad + width - x
-                    if offset + x + width > right:
-                        xs = [p - offset for p in xs]
-                        xs.append(x)
-                    else:
-                        xs.append(x+offset)
-                else:
-                    xs.append(x)
-            else:
-                xs.append(x)
-    return xs, width
-    
-    
 def compound_cards(df, du, ax, fig, **kwargs):
     n, tops = kwargs['cards'], find_top_hits(du, **kwargs)
     if n and not tops.is_empty():
         tops, cards = tops.slice(0, n).reverse(), []
-        left, right = min(du[kwargs['xs']]), max(du[kwargs['xs']])
-        xs, width = position_cards(left, right, tops[kwargs['xs']].to_list())
+        xs, width = position_cards(ax, tops[kwargs['xs']].to_list())
         y = du[kwargs['ys']].max()
         
         for x, row in zip(xs, tops.iter_rows(named=True)):
