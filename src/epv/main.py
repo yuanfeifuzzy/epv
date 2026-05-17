@@ -8,15 +8,20 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import numpy as np
 import polars as pl
-from drawer import Card, position_cards
+from numpy.ma.core import maximum
+
+from drawer import Card, position_cards, overview_plot
 from config import OPTIONS, logger, config_logger, log_and_exit, validate_data_and_options
     
     
 def filter_count(df, **kwargs):
-    filters = {
-        kwargs['xc']: kwargs['x_limit'],
-        kwargs['yc']: kwargs['y_limit']
-    }
+    filters = {}
+    if any(kwargs['x_limit']) and kwargs['x_limit'][0] > 1:
+        filters[kwargs['xc']] = kwargs['x_limit']
+        
+    if any(kwargs['y_limit']) and kwargs['y_limit'][0] > 1:
+        filters[kwargs['yc']] = kwargs['y_limit']
+        
     if 'count_NTC' in df.columns and 'ntc_limit' in kwargs:
         filters['count_NTC'] = kwargs['ntc_limit']
         
@@ -71,11 +76,13 @@ def _enrich(row, xc, xs, ntc):
 
 
 def process_data(df, **kwargs):
-    logger.debug(f'Identifying unique compounds from {df.height:,} features ...')
-    df = (df.sort(kwargs['xs'], descending=True).unique(subset=['library', 'C1_SMILES', 'C2_SMILES', 'C3_SMILES']))
-    logger.debug(f'Retained {df.height:,} unique features')
+    # df = filter_count(df, **kwargs)
     
-    df = filter_count(df, **kwargs)
+    logger.debug(f'Identifying unique compounds from {df.height:,} features ...')
+    keys = ['library', 'C1_SMILES', 'C2_SMILES', 'C3_SMILES']
+    df = (df.with_columns(pl.len().over(keys).alias('encodings'))
+          .sort(kwargs['xs'], descending=True).unique(subset=keys))
+    logger.debug(f'Retained {df.height:,} unique features')
     
     df = df.with_columns(
         pl.when(~pl.col('history_hits').is_null())
@@ -91,91 +98,14 @@ def process_data(df, **kwargs):
     xs, ys = kwargs['xs'], kwargs['ys']
     if ntc:
         df = df.with_columns(
-                pl.struct([kwargs['xc'], kwargs['xs'], f'count_{ntc}', f'zscore_{ntc}', 'history_hits', 'nHH'])
+                pl.struct([kwargs['xc'], kwargs['xs'], f'count_{ntc}', f'zscore_{ntc}', 'nHH'])
                 .map_elements(lambda row: _enrich(row, xc, xs, ntc), return_dtype=pl.String)
                 .alias('enrichment')
         )
     else:
         df = df.with_columns(pl.lit('').alias('enrichment'))
-        
-    dd = df.group_by('library').agg(
-            pl.col(xs).min().alias(f'x_min'),
-            pl.col(xs).max().alias(f'x_max'),
-            pl.col(ys).min().alias(f'y_min'),
-            pl.col(ys).max().alias(f'y_max'),
-    )
-    limits = {
-        'min': min(dd['x_min'].min(), dd['y_min'].min()),
-        'max': max(dd['x_max'].max(), dd['y_max'].max())
-    }
-    logger.debug(f"Dataset {limits}")
     
-    for row in dd.to_dicts():
-        library = row.pop('library')
-        limits[library] = row
-        logger.debug(f'{library} {row}')
-    
-    
-    return df, limits
-
-
-def overview_plot(df, limits, **kwargs):
-    image = kwargs['outdir'].joinpath('overview.png')
-    libraries = kwargs['libraries']
-    num, cols = len(libraries), 6
-    rows, mod = divmod(num, cols)
-    rows = rows + 1 if mod else (rows or 1)
-
-    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(kwargs['figure_width'], kwargs['figure_height']))
-    for i, ax in enumerate(axes.flatten()):
-        row, col = divmod(i, cols)
-        try:
-            library = libraries[i]
-        except IndexError:
-            axes[row - 1][col].xaxis.set_major_locator(MaxNLocator(nbins=4))
-            
-            ax.set_xticks([]), ax.set_xticklabels([])
-            ax.set_yticks([]), ax.set_yticklabels([])
-            ax.get_xaxis().set_visible(False), ax.get_yaxis().set_visible(False)
-            
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.spines['left'].set_visible(False)
-            ax.spines['bottom'].set_visible(False)
-            continue
-        dl = df.filter(pl.col('library') == library)
-        enrichment = dl['enrichment'].to_list()
-        if 'Weak' in enrichment:
-            color = '#FF7375'
-        elif 'Strong' in enrichment:
-            color = '#E60003'
-        else:
-            color = 'black'
-        
-        ax.scatter(dl[kwargs['xs']], dl[kwargs['ys']], c=dl['color'],
-                   s=kwargs['circle_sizes'][0], edgecolors='#6f6f6f', lw=0.3, zorder=2)
-        
-        ax.set_title(library, fontweight='bold', color=color, y=0.88)
-        ax.axvline(x=0, color='lightgray', lw=0.5)
-        ax.axhline(y=0, color='lightgray', lw=0.5)
-        ax.set_xlim(limits['min'], limits['max'])
-        ax.set_ylim(limits['min'], limits['max'])
-        
-        if row == rows - 1:
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
-        else:
-            ax.set_xticks([])
-        if col == 0:
-            ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
-        else:
-            ax.set_yticks([])
-    
-    fig.text(0.5, 0.01, kwargs['x_label'], ha='center', va='center', fontsize=12)
-    fig.text(0.02, 0.5, kwargs['y_label'], ha='center', va='center', rotation='vertical', fontsize=12)
-    
-    fig.subplots_adjust(left=0.05, right=0.99, top=0.97, bottom=0.05, wspace=0.06, hspace=0.05)
-    fig.savefig(image, dpi=kwargs['dpi'])
-    logger.debug(f'Overview plot was saved to {image}\n')
+    return df
 
 
 def adjust_limits_for_marker(ax, limit: dict, s=500, offset_pts=10):
@@ -234,11 +164,15 @@ def compound_cards(df, du, ax, fig, **kwargs):
             smiles_columns = [s for s in smiles_columns if s != 'SMILES']
             smiles = ['SMILES'] + smiles_columns if show_smiles else smiles_columns
             smiles = [row[s] for s in smiles]
-            data = {name: f'{row[cc]} ({row[sc]})'
-                    for name, cc, sc in zip(kwargs['names'], kwargs['count_columns'], kwargs['score_columns'])}
-            data['nHH'] = row['nHH']
+            data = [
+                (kwargs['x'], f'{row[kwargs["xc"]]} ({row[kwargs["xs"]]:.2f})'),
+                (kwargs['y'], f'{row[kwargs["yc"]]} ({row[kwargs["ys"]]:.2f})')
+            ]
+            for name, cc, sc in zip(kwargs['names'], kwargs['count_columns'], kwargs['score_columns']):
+                data.append((name, f'{row[cc]} ({row[sc]})'))
+            data = {'nHH': row['nHH'], 'encodings': row['encodings']}
             point = (row[kwargs['xs']], row[kwargs['ys']])
-            card = Card(ax, x, width, point, row.get('compound', ''), smiles, data)
+            card = Card(ax, x, width, point, smiles, row)
             card.draw()
     else:
         if n:
@@ -321,14 +255,15 @@ def epv(table: str | Path, **kwargs):
     config_logger(kwargs.get('verbose', OPTIONS['verbose']['default']))
     
     df, options = validate_data_and_options(table, **kwargs)
-    unique, limits = process_data(df, **options)
-    # overview_plot(unique, limits, **options)
-    for library in options['libraries']:
-        library_plot(df, unique, library, limits, **options)
+    unique = process_data(df, **options)
+    overview_plot(unique, **options)
+    # for library in options['libraries']:
+    #     library_plot(df, unique, library, limits, **options)
     
     
 if __name__ == '__main__':
-    epv(Path('__file__').resolve().parent / 'data/fake.data.tsv.gz', verbose=True, libraries=['qDOS18_1'],
-        top_hits=[0.004, 0])
+    epv(Path('__file__').resolve().parent / 'data/fake.data.tsv.gz')
+    # epv(Path('__file__').resolve().parent / 'data/fake.data.tsv.gz', verbose=True, libraries=['qDOS18_1'],
+    #     top_hits=[0.004, 0])
     # position_cards(0, 10, [8, 9])
     

@@ -123,12 +123,11 @@ def smiles_image(smiles: str, width: int = 500, height: int = 200,
 class Card:
     """A compound card"""
     
-    def __init__(self, ax, pos, width, point, compound, smiles, data):
+    def __init__(self, ax, pos, width, point, smiles, data):
         self.ax = ax
         self.x = pos
         self.width = width
         self.point = point
-        self.compound = compound
         self.smiles = smiles
         self.data = data
         
@@ -143,8 +142,69 @@ class Card:
                 box_alignment=(-0.02, 0.01), pad=0, frameon=False, zorder=10
             )
             self.ax.add_artist(box)
+        
+        
             
         Box(self.ax, self.point, self.x, y * 0.2, width=self.width, height=y * 0.795).draw()
     
     def __str__(self):
-        return f'{self.compound or "Compound"} {self.pos} {self.smiles[0]}'
+        return f'{self.data.get("compound", "Compound")} {self.pos} {self.smiles[0]}'
+
+
+def overview_plot(df: pl.DataFrame, **kwargs):
+    image = kwargs['outdir'].joinpath('overview.png')
+    libraries = kwargs['libraries']
+    num, cols = len(libraries), 6
+    rows, mod = divmod(num, cols)
+    rows = rows + 1 if mod else (rows or 1)
+    low, high = df[kwargs['xs']].min(), df[kwargs['ys']].max()
+    low, high = low * 0.9 if low >= 0 else low * 1.1, high * 1.1
+    
+    fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(kwargs['figure_width'], kwargs['figure_height']))
+    for i, ax in enumerate(axes.flatten()):
+        row, col = divmod(i, cols)
+        
+        try:
+            library = libraries[i]
+        except IndexError:
+            axes[row - 1][col].xaxis.set_major_locator(MaxNLocator(nbins=4))
+            ax.set_xticks([]), ax.set_xticklabels([])
+            ax.set_yticks([]), ax.set_yticklabels([])
+            ax.get_xaxis().set_visible(False), ax.get_yaxis().set_visible(False)
+            _ = [spine.set_visible(False) for spine in ax.spines.values()]
+            continue
+        
+        dl = df.filter(pl.col('library') == library)
+        xs, ys, cs = kwargs['xs'], kwargs['ys'], kwargs['circle_sizes'][0]
+        
+        dm = dl.filter(pl.col('axis').is_in([0, 1, 2]))
+        ax.scatter(dm[xs], dm[ys], c=dm['color'], s=cs, edgecolors='#6f6f6f', lw=0.3, zorder=2, clip_on=False)
+        
+        dd = dl.filter(pl.col('axis').is_in([3, 4, 5]))
+        ax.scatter(dd[xs], dd[ys], c=dd['color'], s=cs, edgecolors='#6f6f6f', lw=0.3, zorder=4, clip_on=False)
+        
+        dt = dl.filter(pl.col('axis') == 6)
+        ax.scatter(dt[xs], dt[ys], c=dt['color'], s=cs, edgecolors='#6f6f6f', lw=0.3, zorder=6, clip_on=False)
+        
+        color_map = {'Strong': '#E60003', 'Weak': '#FF7375'}
+        color = next((color_map[k] for k in color_map if k in set(dl['enrichment'])), 'black')
+        ax.set_title(library, fontweight='bold', color=color, y=0.88)
+        
+        ax.set_xlim(low, high), ax.set_ylim(low, high)
+        ax.margins(0.05)
+        
+        if row == rows - 1:
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+        else:
+            ax.set_xticks([])
+        if col == 0:
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+        else:
+            ax.set_yticks([])
+    
+    fig.text(0.5, 0.01, kwargs['x_label'], ha='center', va='center', fontsize=12)
+    fig.text(0.02, 0.5, kwargs['y_label'], ha='center', va='center', rotation='vertical', fontsize=12)
+    
+    fig.subplots_adjust(left=0.05, right=0.99, top=0.97, bottom=0.05, wspace=0.06, hspace=0.08)
+    fig.savefig(image, dpi=kwargs['dpi'])
+    logger.debug(f'Overview plot was saved to {image}\n')
