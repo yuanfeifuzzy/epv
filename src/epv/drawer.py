@@ -9,6 +9,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem import Draw, Descriptors
 
+import numpy as np
 import polars as pl
 from PIL import Image
 from loguru import logger
@@ -20,6 +21,8 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib.offsetbox import AnchoredText
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox, DrawingArea, TextArea
+
+from processor import filter_count, find_top_hits
 
 OPTIONS = {
     'dpi': {'help': 'The DPI of the output plot', 'default': 300, 'type': int},
@@ -66,22 +69,19 @@ def position_cards(ax, scores: list):
             x = left + pad
         elif score + half > right:
             x = right - width - pad
-        if i == 0:
-            xs.append(x + pad)
-        else:
-            if xs:
-                previous = xs[-1]
-                if previous + pad + width > x:
-                    offset = previous + pad + width - x
-                    if offset + x + pad + width > right:
-                        xs = [p - offset for p in xs]
-                        xs.append(x)
-                    else:
-                        xs.append(x+offset)
-                else:
+        if xs:
+            previous = xs[-1]
+            if previous + pad + width > x:
+                offset = previous + pad + width - x
+                if offset + x + pad + width > right:
+                    xs = [p - offset for p in xs]
                     xs.append(x)
+                else:
+                    xs.append(x+offset)
             else:
                 xs.append(x)
+        else:
+            xs.append(x)
     return xs, width
     
     
@@ -152,12 +152,13 @@ class Card:
 
 
 def overview_plot(df: pl.DataFrame, **kwargs):
-    image = kwargs['outdir'].joinpath('overview.png')
+    xs, ys, cs = kwargs['xs'], kwargs['ys'], kwargs['circle_sizes'][0]
     libraries = kwargs['libraries']
     num, cols = len(libraries), 6
     rows, mod = divmod(num, cols)
     rows = rows + 1 if mod else (rows or 1)
-    low, high = df[kwargs['xs']].min(), df[kwargs['ys']].max()
+    scores = pl.concat([df[xs], df[ys]])
+    low, high = min(scores), max(scores)
     low, high = low * 0.9 if low >= 0 else low * 1.1, high * 1.1
     
     fig, axes = plt.subplots(nrows=rows, ncols=cols, figsize=(kwargs['figure_width'], kwargs['figure_height']))
@@ -175,7 +176,6 @@ def overview_plot(df: pl.DataFrame, **kwargs):
             continue
         
         dl = df.filter(pl.col('library') == library)
-        xs, ys, cs = kwargs['xs'], kwargs['ys'], kwargs['circle_sizes'][0]
         
         dm = dl.filter(pl.col('axis').is_in([0, 1, 2]))
         ax.scatter(dm[xs], dm[ys], c=dm['color'], s=cs, edgecolors='#6f6f6f', lw=0.3, zorder=2, clip_on=False)
@@ -206,5 +206,75 @@ def overview_plot(df: pl.DataFrame, **kwargs):
     fig.text(0.02, 0.5, kwargs['y_label'], ha='center', va='center', rotation='vertical', fontsize=12)
     
     fig.subplots_adjust(left=0.05, right=0.99, top=0.97, bottom=0.05, wspace=0.06, hspace=0.08)
+    image = kwargs['outdir'].joinpath('overview.png')
     fig.savefig(image, dpi=kwargs['dpi'])
     logger.debug(f'Overview plot was saved to {image}\n')
+
+
+# region Library plot
+def set_title_legend(ax, library, **kwargs):
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("top", size="8%", pad=0)
+    cax.get_xaxis().set_visible(False)
+    cax.get_yaxis().set_visible(False)
+    cax.add_artist(AnchoredText(library, loc='upper right', prop=dict(size=14, fontweight='bold'), frameon=False))
+    
+    c1, c2, c3 = kwargs['colors']
+    options = {'marker': 'o', 'markersize': 15, 'markeredgecolor': '#6f6f6f', 'color': 'w'}
+    legends = [Line2D([0], [0], label='Mono-', markerfacecolor=c1, **options),
+               Line2D([0], [0], label='Di-', markerfacecolor=c2, **options),
+               Line2D([0], [0], label='Tri-Sython', markerfacecolor=c3, **options)]
+    cax.legend(handles=legends, loc='center left', bbox_to_anchor=(0, 0.5), frameon=False, ncol=3, fontsize=10)
+
+
+def compound_cards(df, du, ax, fig, **kwargs):
+    n, tops = kwargs['cards'], du
+    tops, cards = tops.slice(0, n).reverse(), []
+    xs, width = position_cards(ax, tops[kwargs['xs']].to_list())
+    
+    for x, row in zip(xs, tops.iter_rows(named=True)):
+        smiles_columns, show_smiles = kwargs['smiles_columns'], kwargs['show_smiles']
+        smiles_columns = [s for s in smiles_columns if s != 'SMILES']
+        smiles = ['SMILES'] + smiles_columns if show_smiles else smiles_columns
+        smiles = [row[s] for s in smiles]
+        data = [(kwargs['x'], f'{row[kwargs["xc"]]} ({row[kwargs["xs"]]:.2f})'),
+            (kwargs['y'], f'{row[kwargs["yc"]]} ({row[kwargs["ys"]]:.2f})')]
+        for name, cc, sc in zip(kwargs['names'], kwargs['count_columns'], kwargs['score_columns']):
+            data.append((name, f'{row[cc]} ({row[sc]})'))
+        data = {'nHH': row['nHH'], 'encodings': row['encodings']}
+        point = (row[kwargs['xs']], row[kwargs['ys']])
+        card = Card(ax, x, width, point, smiles, row)
+        card.draw()
+    else:
+        if n:
+            logger.debug('No top hits was found, no compound card will be drawn')
+        else:
+            logger.debug('No top hits was found, no compound card will be drawn')
+
+
+def library_plot(df, du, library, **kwargs):
+    logger.debug(f'Plotting library {library} ...')
+    dd = du.filter(pl.col('library') == library)
+
+    ax = kwargs.get('ax', None)
+    fig, ax = (plt, ax) if ax else plt.subplots(figsize=(kwargs['figure_width'], kwargs['figure_height']))
+    ax.scatter(dd[kwargs['xs']], dd[kwargs['ys']], c=dd['color'],
+               s=kwargs['circle_sizes'][1], edgecolors='#6f6f6f', lw=0.25, zorder=2, clip_on=False)
+    
+    ax.set_xlabel(kwargs['x_label'], fontsize=12), ax.set_ylabel(kwargs['y_label'], fontsize=12)
+    low, high = min(ax.get_xlim()[0], ax.get_ylim()[0]), max(ax.get_xlim()[1], ax.get_ylim()[1])
+    low, high = low * 0.95 if low >= 0 else low * 1.05, high * 1.05
+    ax.set_xlim(low, high), ax.set_ylim(low, high)
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=4))
+    set_title_legend(ax, library, **kwargs)
+    
+    dd = find_top_hits(du, **kwargs)
+    if kwargs['cards'] and not dd.is_empty():
+        compound_cards(df, dd, ax, fig, **kwargs)
+    
+    image = kwargs['outdir'].joinpath(f'{library}.png')
+    fig.savefig(image, dpi=kwargs['dpi'])
+    logger.debug(f'Library plot was saved to {image.name}\n')
+    plt.close()
+# endregion
