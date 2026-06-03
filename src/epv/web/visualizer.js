@@ -198,7 +198,7 @@
                 if (!window.pako) throw new Error("pako library required for gzip decompression.");
                 rawInput = window.pako.ungzip(u8, { to: "string" });
             } else {
-                rawInput = u8;
+                rawInput = new TextDecoder().decode(u8);
             }
             fileName = fileName || input;
         } else if (input instanceof Blob) {
