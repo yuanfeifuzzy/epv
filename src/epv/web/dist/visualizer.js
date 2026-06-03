@@ -65,8 +65,8 @@
       zscoreCutoff: Number(q('zscoreCutoff')?.value || 1.0),
 
       colors: {
-        mono: q('colorMono')?.value || '#0d6efd',
-        di:   q('colorDi')?.value   || '#6f42c1',
+        mono: q('colorMono')?.value || '#0000ad',
+        di:   q('colorDi')?.value   || '#00ff33',
         tri:  q('colorTri')?.value  || '#ffcc00',
       },
     };
@@ -198,7 +198,7 @@
                 if (!window.pako) throw new Error("pako library required for gzip decompression.");
                 rawInput = window.pako.ungzip(u8, { to: "string" });
             } else {
-                rawInput = u8;
+                rawInput = new TextDecoder().decode(u8);
             }
             fileName = fileName || input;
         } else if (input instanceof Blob) {
