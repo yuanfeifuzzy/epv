@@ -1466,7 +1466,7 @@
       R.config = readConfigForm();
       bindEvents();
 
-      if (analysis_id !== '"{{ object.pk }}"') {
+      if (analysis_id === '"{{ object.pk }}"') {
         document.getElementById('hitsModalFooter').style.display = 'none';
       }
 
