@@ -1,10 +1,25 @@
+import io
 import sys
 from pathlib import Path
+from functools import partial
 from datetime import datetime
 from collections.abc import Sequence
 
+from rdkit import Chem, RDLogger
+from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem import Draw, Descriptors
+
 import polars as pl
+from PIL import Image
 from loguru import logger
+from matplotlib.lines import Line2D
+from matplotlib import pyplot as plt
+from matplotlib.transforms import Bbox
+from matplotlib.ticker import MaxNLocator
+from matplotlib.offsetbox import AnchoredText
+from matplotlib.patches import FancyArrowPatch
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox, DrawingArea, TextArea
 
 OPTIONS = {
     'x': {'help': 'A column name will be assigned as x variable'},
@@ -21,7 +36,7 @@ OPTIONS = {
     'date': {'help': 'A date string or defaults to today'},
     'x_limit': {'help': 'Lower and upper bound of x axis variable count', 'default': [1, None], 'type': Sequence},
     'y_limit': {'help': 'Lower and upper bound of y axia variable count', 'default': [1, None], 'type': Sequence},
-    'ntc_limit': {'help': 'Lower and upper bound of NTC count', 'default': [None, 20], 'type': Sequence},
+    'ntc_limit': {'help': 'Lower and upper bound of NTC count', 'default': [0, 20], 'type': Sequence},
     'dpi': {'help': 'The DPI of the output plot', 'default': 300, 'type': int},
     'figure_width': {'help': 'The width of figure in inch', 'default': 18, 'type': int},
     'figure_height': {'help': 'The height of figure in inch', 'default': 9, 'type': int},
@@ -137,9 +152,9 @@ def validate_data_and_options(table, **kwargs):
         ms = set(libraries) - set(libs)
         if ms:
             log_and_exit(f'Specified libraries: {ms} not found in table')
-        options['libraries'] = list(libraries)
+        options['libraries'] = sorted(libraries)
     else:
-        options['libraries'] = libs
+        options['libraries'] = sorted(libs)
     
     colors = kwargs.get('colors', OPTIONS['colors']['default'])
     if not isinstance(colors, Sequence):
@@ -170,17 +185,3 @@ def validate_data_and_options(table, **kwargs):
     if not options['outdir'].exists():
         options['outdir'].mkdir(exist_ok=True, parents=True)
     return df, options
-
-
-class Card:
-    """A compound card"""
-    
-    def __init__(self, compound, pos, smiles, data):
-        self.compound = compound
-        self.pos = pos
-        self.smiles = smiles
-        self.data = data
-        
-    def __str__(self):
-        return f'{self.compound or "Compound"} {self.pos} {self.smiles[0]}'
-        
