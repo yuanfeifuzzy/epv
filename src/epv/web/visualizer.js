@@ -1389,6 +1389,43 @@
           R.utilities.removeCompounds();
           renderChart();
           if (R.library !== 'All') R.utilities.showCompounds();
+          break;
+        case 'postHits':
+          const url = `/discovery/post/hits/${analysis_id}/`;
+          const tableData = R.hitsTable.getData();
+          fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": `${csrftoken}`
+            },
+            body: JSON.stringify({ rows: tableData })
+          })
+          .then(response => response.json())
+          .then(data => {
+              console.log(`data: ${data}`)
+              const msgSpan = document.getElementById('hits-post-message');
+              if (msgSpan) {
+                  msgSpan.textContent = `Successfully posted ${data.hits} hits.`;
+              }
+          })
+          .catch(err => {
+              console.error('Error posting hits:', err);
+              const msgSpan = document.getElementById('hits-post-message');
+              if (msgSpan) {
+                  msgSpan.textContent = `Failed to post hits.`;
+              }
+          });
+
+          const hm = bootstrap.Modal.getOrCreateInstance(R.els.hitsModal, {
+            backdrop: true,
+            keyboard: true,
+            focus: true
+          });
+          setTimeout(() => {
+            hm.hide();
+          }, 5000);
+          break;
       }
     });
   };
@@ -1428,6 +1465,10 @@
     async init(input=null) {
       R.config = readConfigForm();
       bindEvents();
+
+      if (analysis_id !== '"{{ object.pk }}"') {
+        document.getElementById('hitsModalFooter').style.display = 'none';
+      }
 
       if (input) {
         const rows = await R.io.load(input);

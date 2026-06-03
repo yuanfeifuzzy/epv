@@ -138,6 +138,12 @@
         <div class="modal-body">
           <div id="hitsTable" class="w-100 h-100 p-1 bg-white"></div>
         </div>
+
+        <div class="modal-footer" id="hitsModalFooter">
+          <span id="hits-post-message"></span>
+          <button id="btnPostHits" class="btn btn-danger" data-action="postHits">POST HITS</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
       </div>
     </div>
   </div>
@@ -340,6 +346,10 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/yuanfeifuzzy/smiles-render@main/smiles-render.js"></script>
   <script src="./usage.js"></script>
+    <script type="text/javascript">
+    const csrftoken = "{{ csrf_token }}";
+    const analysis_id = "{{ object.pk }}";
+  </script>
   <script src="./visualizer.js"></script>
   <script type="text/javascript">
     document.addEventListener('DOMContentLoaded', () => {
