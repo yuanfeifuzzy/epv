@@ -1391,7 +1391,7 @@
           if (R.library !== 'All') R.utilities.showCompounds();
           break;
         case 'postHits':
-          const url = `/discovery/post/hits/${analysis_id}/`;
+          const url = `${post_api}`;
           const tableData = R.hitsTable.getData();
           fetch(url, {
             method: "POST",
