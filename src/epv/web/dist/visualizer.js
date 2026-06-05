@@ -78,12 +78,8 @@
     btnSaveSession       : q('btnSaveSession'),
     switchers            : q('switchers'),
     selectors            : q('selectors'),
-    btnX                 : q('btnX'),
-    xSel                 : q('xSel'),
     btnLibrary           : q('btnLibrary'),
     librarySel           : q('librarySel'),
-    btnY                 : q('btnY'),
-    ySel                 : q('ySel'),
     uploadPanel          : q('uploadPanel'),
     fileInput            : q('fileInput'),
     dz                   : q('dropzone'),
@@ -799,28 +795,155 @@
     R.x = x;
     R.y = y;
 
-    buildOptions(R.els.xSel, scoreColumns, 'X', x, R.els.btnX);
-    buildOptions(R.els.ySel, scoreColumns, 'Y', y, R.els.btnY)
     buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', R.library || 'All', R.els.btnLibrary)
     R.els.selectors.classList.remove('d-none')
     R.vs = `${x.replace('zscore_', '')}.vs.${y.replace('zscore_', '')}`
   };
 
+  /**
+   * Dynamically builds and displays an options menu floating next to the clicked axis title
+   * @param {HTMLElement} anchorElement - The axis title DOM element that was clicked
+   * @param {'X'|'Y'} axisTag - Which axis we are updating
+   */
+  function showAxisContextMenu(anchorElement, axisTag) {
+    // Remove any existing dynamic menu to prevent duplicates
+    document.getElementById('plotly-axis-context-menu')?.remove();
+
+    // Create a floating menu container (using Bootstrap dropdown styles)
+    const menu = document.createElement('ul');
+    menu.id = 'plotly-axis-context-menu';
+    menu.className = 'dropdown-menu show p-2 shadow-sm';
+    menu.style.position = 'absolute';
+    menu.style.zIndex = '1050';
+    menu.style.margin = '0';
+
+    const currentSelected = axisTag === 'X' ? R.x : R.y;
+
+    // Build options list inside the floating menu
+    R.scoreColumns.forEach(option => {
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = '#';
+      link.textContent = option;
+      link.className = option === currentSelected ? 'dropdown-item active' : 'dropdown-item';
+
+      link.onclick = (e) => {
+        e.preventDefault();
+
+        // Update global state
+        if (axisTag === 'X') R.x = option;
+        if (axisTag === 'Y') R.y = option;
+
+        // Re-trigger selector math & chart redraw
+        buildSelector();
+        analyzeData();
+        buildHitsTable();
+        buildTopHitsTable();
+        renderChart();
+
+        menu.remove(); // Close menu after choice
+      };
+
+      li.appendChild(link);
+      menu.appendChild(li);
+    });
+
+    document.body.appendChild(menu);
+
+    // Get dimensions of both the clicked title and our new menu
+    const rect = anchorElement.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+
+    let leftPosition = 0;
+    let topPosition = 0;
+
+    if (axisTag === 'X') {
+      // 💡 ABOVE THE TITLE:
+      // Align horizontally with the center of the title, push vertically above it by its own height
+      leftPosition = rect.left + (rect.width / 2) - (menuRect.width / 2);
+      topPosition = rect.top - menuRect.height - 8; // 8px padding buffer
+    } else if (axisTag === 'Y') {
+      // 💡 RIGHT NEXT TO THE TITLE:
+      // Place to the right of the title element, center it vertically against the title text
+      leftPosition = rect.right + 8; // 8px padding buffer
+      topPosition = rect.top + (rect.height / 2) - (menuRect.height / 2);
+    }
+
+    // Fallback check: Ensure the menu doesn't fly off the left or top edge of the screen
+    leftPosition = Math.max(8, leftPosition);
+    topPosition = Math.max(8, topPosition);
+
+    // Apply calculated pixel coordinates (factoring in page scroll)
+    menu.style.left = `${leftPosition + window.scrollX}px`;
+    menu.style.top = `${topPosition + window.scrollY}px`;
+
+    // Close menu if user clicks anywhere else on the screen
+    setTimeout(() => {
+      const closeMenu = (e) => {
+        if (!menu.contains(e.target)) {
+          menu.remove();
+          document.removeEventListener('click', closeMenu);
+        }
+      };
+      document.addEventListener('click', closeMenu);
+    }, 0);
+  }
+
   const handleChartEvent = (gd) => {
     if (R.library !== 'All') {
       R.utilities.alignModebarWithLegend();
 
+      function bindAxisTitleClicks() {
+        const xTitles = gd.querySelectorAll('.g-xtitle, .g-x2title');
+        const yTitles = gd.querySelectorAll('.g-ytitle, .g-y2title');
+
+        xTitles.forEach(el => {
+          el.onclick = function(e) {
+            e.stopPropagation();
+            showAxisContextMenu(this, 'X');
+          };
+        });
+
+        yTitles.forEach(el => {
+          el.onclick = function(e) {
+            e.stopPropagation();
+            showAxisContextMenu(this, 'Y');
+          };
+        });
+      }
+
       gd.removeAllListeners?.('plotly_click');
+      gd.removeAllListeners?.('plotly_afterplot');
+
       if (typeof gd.on === 'function') {
+          bindAxisTitleClicks();
+
           gd.on('plotly_click', ev => {
             const id = ev.points[0].id;
             const card = document.querySelector(`#${CSS.escape(id)}.card`)
             card ? R.utilities.removeCompound(id) : R.utilities.showCompound(id);
           });
+
+      // Ensure that if the plot re-renders (zoom, pan, data changes), we re-bind
+      gd.on('plotly_afterplot', () => {
+        bindAxisTitleClicks();
+      });
+
       }
     } else {
-      gd.on('plotly_clickannotation', function(event) {
-        const library = event.annotation.text;
+      gd.on('plotly_clickannotation', function(data) {
+        const library = data.annotation.name;
+
+        if (library === 'global-x') {
+          showAxisContextMenu(data.event.target, 'X');
+          return;
+        }
+
+        if (library === 'global-y') {
+          showAxisContextMenu(data.event.target, 'Y');
+          return;
+        }
+
         R.els.btnLibrary.textContent = `Library: ${library}`;
         R.els.btnLibrary.dataset.value = library;
         R['library'] = library;
@@ -835,8 +958,8 @@
   };
 
   const renderChart = () => {
-    const x = R.x || R.els.btnX?.textContent.split(': ')[1];
-    const y = R.y || R.els.btnY?.textContent.split(': ')[1];
+    const x = R.x;
+    const y = R.y;
     const library = R.library || R.els.btnLibrary?.textContent.split(': ')[1];
     const cfg = R.config;
 
@@ -930,6 +1053,7 @@
 
         layout.annotations.push({
             text: String(library),
+            name: String(library),
             xref: `${trace.xaxis} domain`,
             yref: `${trace.yaxis} domain`,
             x: 0.5,
@@ -950,12 +1074,14 @@
         {
           text: `${x.replace('zscore_', '')} (z-score)`,
           xref: 'paper', yref: 'paper',
-          x: 0.5, y: -0.08, showarrow: false, font: {size: R.config.fontSize}
+          x: 0.5, y: -0.04, showarrow: false, font: {size: R.config.fontSize},
+          captureevents: true, name: 'global-x'
         },
         {
           text: `${y.replace('zscore_', '')} (z-score)`,
           xref: 'paper', yref: 'paper',
-          x: -0.05, y: 0.5, textangle: -90, showarrow: false, font: {size: R.config.fontSize}
+          x: -0.05, y: 0.5, textangle: -90, showarrow: false, font: {size: R.config.fontSize},
+          captureevents: true, name: 'global-y'
         }
       );
     } else {
@@ -1217,9 +1343,8 @@
         if (R.library !== 'All') R.utilities.showCompounds();
       });
     }
-    bindDropdown(R.els.xSel, R.els.btnX, 'X')
+
     bindDropdown(R.els.librarySel, R.els.btnLibrary, 'Library')
-    bindDropdown(R.els.ySel, R.els.btnY, 'Y')
 
     // R.els.btnSaveConfig?.addEventListener('click', () => {
     //   const cfg = readConfigForm();
@@ -1466,7 +1591,7 @@
       R.config = readConfigForm();
       bindEvents();
 
-      if (analysis_id === '"{{ object.pk }}"') {
+      if (typeof post_api === 'undefined' || !post_api) {
         document.getElementById('hitsModalFooter').style.display = 'none';
       }
 
