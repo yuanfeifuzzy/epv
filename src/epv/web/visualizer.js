@@ -78,12 +78,8 @@
     btnSaveSession       : q('btnSaveSession'),
     switchers            : q('switchers'),
     selectors            : q('selectors'),
-    btnX                 : q('btnX'),
-    xSel                 : q('xSel'),
     btnLibrary           : q('btnLibrary'),
     librarySel           : q('librarySel'),
-    btnY                 : q('btnY'),
-    ySel                 : q('ySel'),
     uploadPanel          : q('uploadPanel'),
     fileInput            : q('fileInput'),
     dz                   : q('dropzone'),
@@ -799,8 +795,6 @@
     R.x = x;
     R.y = y;
 
-    // buildOptions(R.els.xSel, scoreColumns, 'X', x, R.els.btnX);
-    // buildOptions(R.els.ySel, scoreColumns, 'Y', y, R.els.btnY)
     buildOptions(R.els.librarySel, ['All', ...R.libraries], 'Library', R.library || 'All', R.els.btnLibrary)
     R.els.selectors.classList.remove('d-none')
     R.vs = `${x.replace('zscore_', '')}.vs.${y.replace('zscore_', '')}`
@@ -953,8 +947,8 @@
   };
 
   const renderChart = () => {
-    const x = R.x || R.els.btnX?.textContent.split(': ')[1];
-    const y = R.y || R.els.btnY?.textContent.split(': ')[1];
+    const x = R.x;
+    const y = R.y;
     const library = R.library || R.els.btnLibrary?.textContent.split(': ')[1];
     const cfg = R.config;
 
@@ -1335,9 +1329,8 @@
         if (R.library !== 'All') R.utilities.showCompounds();
       });
     }
-    bindDropdown(R.els.xSel, R.els.btnX, 'X')
+
     bindDropdown(R.els.librarySel, R.els.btnLibrary, 'Library')
-    bindDropdown(R.els.ySel, R.els.btnY, 'Y')
 
     // R.els.btnSaveConfig?.addEventListener('click', () => {
     //   const cfg = readConfigForm();

@@ -18,8 +18,7 @@
 
 <body class="container-fluid bg-light">
   <div class="row py-2 align-items-center g-2 flex-shrink-0">
-    <div
-      class="col-sm-2 col-md-1 d-flex align-items-center justify-content-start">
+    <div class="col-1 d-flex">
       <h1 class="h3 mb-0">EPV</h1>
       <button type="button" class="btn btn-light py-0 ms-1" title="Help"
               data-bs-toggle="modal" data-bs-target="#helpModal">
@@ -27,7 +26,7 @@
       </button>
     </div>
 
-    <div class="col-9 col-sm-10 col-md-4 col-lg-5 d-flex justify-content-end d-none" id="switchers">
+    <div class="col-9 text-end d-none" id="switchers">
       <button type="button" class="btn btn-light position-relative py-0 px-1 disabled" id="btnHitsModal"
               data-bs-toggle="modal" data-bs-target="#hitsModal" title="Candidate Hits">
         <i class="bi bi-bag"></i>
@@ -60,26 +59,12 @@
       </button>
     </div>
 
-    <div class="col-12 col-sm-12 col-md-7 col-lg-6 d-flex justify-content-end d-none" id="selectors">
-      <div id="data-selector" class="btn-group d-flex w-100" role="group" aria-label="X / Library / Y">
+    <div class="col-2 ms-auto d-none" id="selectors">
+      <div id="data-selector" class="btn-group d-flex w-100" role="group" aria-label="Library">
         <div class="btn-group flex-fill" role="group">
-          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100 text-start rounded-start-pill"
-                  data-bs-toggle="dropdown" aria-expanded="false" id="btnX">X</button>
-          <ul class="dropdown-menu" id="xSel">
-          </ul>
-        </div>
-
-        <div class="btn-group flex-fill" role="group">
-          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100"
+          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100 rounded-pill"
                   data-bs-toggle="dropdown" aria-expanded="false" id="btnLibrary">Library</button>
           <ul class="dropdown-menu" id="librarySel">
-          </ul>
-        </div>
-
-        <div class="btn-group flex-fill" role="group">
-          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100 text-end rounded-end-pill"
-                  data-bs-toggle="dropdown" aria-expanded="false" id="btnY">Y</button>
-          <ul class="dropdown-menu" id="ySel">
           </ul>
         </div>
       </div>
