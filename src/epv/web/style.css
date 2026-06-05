@@ -78,3 +78,10 @@
 .bg-neutral {
     background-color: #f8f9fa;
 }
+
+.xaxislayer-above text, 
+.yaxislayer-above text,
+.g-xtitle, .g-ytitle {
+  cursor: pointer !important;
+  pointer-events: all !important;
+}
