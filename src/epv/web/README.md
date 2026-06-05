@@ -23,11 +23,12 @@ All functionality runs client‑side in the browser, no backend required.
 ## Typical Workflow
 1. Open `index.html` (or serve locally).
 2. Load dataset (via drag-and-drop or **Upload** button).
-3. Choose X/Library/Y fields using the selectors.
-4. Zoom, hover, and click points for detail.
-5. Review **Candidate Hits** and **Top Hits**.
-6. Tune font sizes, structure rendering, z-score cutoff, and maximum number of hits per library in **Config**.
-7. Open **Encoding** to inspect details of building blocks encoded by multiple barcodes.
+3. Choose Library fields using the library dropdown selector.
+4. Click x-axis or y-axis title to view and change x or y variable.
+5. Zoom, hover, and click points for detail.
+6. Review **Candidate Hits** and **Top Hits**.
+7. Tune font sizes, structure rendering, z-score cutoff, and maximum number of hits per library in **Config**.
+8. Open **Encoding** to inspect details of building blocks encoded by multiple barcodes.
 
 ---
 
@@ -56,9 +57,9 @@ CSV/TSV or GZIP‑compressed versions are supported.
 - **Config (gear)** — Open configuration modal
 
 ### Selectors (after data loads)
-- **X**: choose the x‑axis field (numeric)
+- **X**: choose the x‑axis field (numeric) by clicking x-axis title
 - **Library**: choose the grouping field
-- **Y**: choose the y‑axis field (numeric)
+- **Y**: choose the y‑axis field (numeric) by clicking y-axis title
 
 ### Chart Panel
 Interactive Plotly scatter with zoom/pan/reset. Click points to inspect structures/details.

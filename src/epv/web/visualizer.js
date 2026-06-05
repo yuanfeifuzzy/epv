@@ -931,8 +931,19 @@
 
       }
     } else {
-      gd.on('plotly_clickannotation', function(event) {
-        const library = event.annotation.text;
+      gd.on('plotly_clickannotation', function(data) {
+        const library = data.annotation.name;
+
+        if (library === 'global-x') {
+          showAxisContextMenu(data.event.target, 'X');
+          return;
+        }
+
+        if (library === 'global-y') {
+          showAxisContextMenu(data.event.target, 'Y');
+          return;
+        }
+
         R.els.btnLibrary.textContent = `Library: ${library}`;
         R.els.btnLibrary.dataset.value = library;
         R['library'] = library;
@@ -1042,6 +1053,7 @@
 
         layout.annotations.push({
             text: String(library),
+            name: String(library),
             xref: `${trace.xaxis} domain`,
             yref: `${trace.yaxis} domain`,
             x: 0.5,
@@ -1062,12 +1074,14 @@
         {
           text: `${x.replace('zscore_', '')} (z-score)`,
           xref: 'paper', yref: 'paper',
-          x: 0.5, y: -0.04, showarrow: false, font: {size: R.config.fontSize}
+          x: 0.5, y: -0.04, showarrow: false, font: {size: R.config.fontSize},
+          captureevents: true, name: 'global-x'
         },
         {
           text: `${y.replace('zscore_', '')} (z-score)`,
           xref: 'paper', yref: 'paper',
-          x: -0.05, y: 0.5, textangle: -90, showarrow: false, font: {size: R.config.fontSize}
+          x: -0.05, y: 0.5, textangle: -90, showarrow: false, font: {size: R.config.fontSize},
+          captureevents: true, name: 'global-y'
         }
       );
     } else {
